@@ -1,0 +1,219 @@
+##
+## EPITECH PROJECT, 2020
+## SYN_automakefile_2019
+## File description:
+## automakefile
+##
+
+#!/bin/bash
+
+if [ $2 ]
+then
+    echo "ERROR: many argument"
+    exit 84
+fi
+
+folder=$1
+if [ ! -f "$folder" ] || [[ -z $(grep '[^[:space:]]' $folder) ]]
+then
+    echo "ERROR: invalid config files"
+    exit 84
+else
+    let "src_count = 0"
+    while IFS= read -r line || [ -n "$line" ]
+        do
+        IFS=";"
+		arr=($line)
+		if [[ ${arr[0]} == "PROJECT_DIR" ]]
+		then
+			project_dir=${arr[1]}
+        elif [[ ${arr[0]} == "SOURCES_DIR" ]]
+		then
+			src_dir=${arr[1]}
+        elif [[ ${arr[0]} == "HEADERS_DIR" ]]
+		then
+			headers_dir=${arr[1]}
+        elif [[ ${arr[0]} == "LIBS_DIR" ]]
+		then
+			lib_dir=${arr[1]}
+        elif [[ ${arr[0]} == "EXEC" ]]
+		then
+			exec=${arr[1]}
+        elif [[ ${arr[0]} == "CC" ]]
+		then
+			cc=${arr[1]}
+        elif [[ ${arr[0]} == "CFLAGS" ]]
+		then
+			cflags=${arr[1]}
+        elif [[ ${arr[0]} == "LDFLAGS" ]]
+		then
+			ldflags=${arr[1]}
+        elif [[ ${arr[0]} == *.c ]]
+		then
+			src[$src_count]=${arr[0]}
+            include="$include ${arr[1]}"
+            let "src_count++"
+        elif [[ ${arr[0]} == "BCK_DIR" ]]
+		then
+			backup_dir=${arr[1]}
+        elif [[ ${arr[0]} == "ZIP" ]]
+		then
+			comp=${arr[1]}
+        elif [[ ${arr[0]} == "ZIPFLAGS" ]]
+		then
+			comp_flags=${arr[1]}
+        elif [[ ${arr[0]} == "UNZIP" ]]
+		then
+			decomp=${arr[1]}
+        elif [[ ${arr[0]} == "UNZIPFLAGS" ]]
+		then
+			decomp_flags=${arr[1]}
+        fi
+    done < $folder
+
+    if [ ! -d $project_dir ] || [ ! -w $project_dir ]
+    then
+        echo "Error: invalid project dir"
+        exit 84
+    fi
+    IFS=' ' read -r -a arr_include <<< $include
+    for index in "${!arr_include[@]}"
+    do
+        IFS='/' read -r -a arr_header <<< ${arr_include[index]}
+        tmp=""
+        if [ -f "$project_dir/$headers_dir/${arr_include[index]}" ]
+        then
+            for i_header in "${!arr_header[@]}"
+            do
+                if [[ ${arr_header[i_header]} != *.h ]] && [ -n ${arr_header[i_header]} ]
+                then
+                    tmp+="${arr_header[i_header]}/"
+                fi
+            done
+        else
+            echo "Error: invalid headers file"
+            exit 84
+        fi
+        if [ "$tmp" != "" ]
+        then
+            headers="$headers -I${headers_dir}/$tmp"
+        fi
+    done
+
+
+    # Génération Makefile
+
+    makefile="$project_dir/Makefile"
+    cat /dev/null > $makefile
+    if [ ! $exec ]
+    then
+        echo -e "NAME   =\ta.out">>$makefile
+    else
+        echo -e "NAME   =\t${exec}">>$makefile
+    fi
+    if [ -n $src ]
+    then
+        let "i = 0"
+        if [ -z $src_dir ]
+        then
+            src_dir="."
+        fi
+        while [ $i -lt $src_count ]
+        do
+            path="${src_dir}/${src[$i]}"
+            if [ -z $path ] || [ ! -e "$project_dir/$path" ]
+            then
+                echo "Error: invalid src path"
+                exit 84
+            else
+                if [ $i -eq 0 ]
+                then
+                    echo -e "SRC    =\t$path\\">>$makefile
+                else
+                    echo -e "\t\t\t$path\\">>$makefile
+                fi
+                let "i++"
+            fi
+        done
+        echo >>$makefile
+    fi
+    if [ ! -z $cc ]
+    then
+        echo -e "CC     =\t${cc}">>$makefile
+    else
+        echo -e "CC     =\tgcc">>$makefile
+    fi
+    if [ -n cflags ]
+    then
+        echo -e "CFLAGS =\t${cflags} -I./$headers_dir$headers">>$makefile
+    fi
+    echo -e "LDFLAGS=\t${ldflags}">>$makefile
+    echo -e "OBJ    =\t\$(SRC:%.c=%.o)">>$makefile
+    echo -e "RM     =\trm -f">>$makefile
+    if [ -n $comp ] && [ -n $comp_flags ] && [ -n $backup_dir ]
+    then
+        echo -e "VERSION=\t\$(shell cat .version)">>$makefile
+    fi
+
+    # Makefile rules
+
+    echo -e "all    :\t\$(NAME)">>$makefile
+    echo -e "\$(NAME):\t\$(OBJ)">>$makefile
+    if [ ! -z $lib_dir ] && [ -f ./$project_dir/$lib_dir/Makefile ]
+    then
+        echo -e "\t\t\t$(MAKE) -C $lib_dir">>$makefile
+    fi
+    echo -e "\t\t\t\$(CC) -o \$(NAME) \$(OBJ) \$(LDFLAGS)">>$makefile
+    echo -e "clean:\n\t\t\t\$(RM) \$(OBJ)">>$makefile
+    if [ ! -z $lib_dir ] && [ -f ./$project_dir/$lib_dir/Makefile ]
+    then
+        echo -e "\t\t\t$(MAKE) -C $lib_dir clean">>$makefile
+    fi
+    echo -e "fclean:\t\tclean\n\t\t\t\$(RM) \$(NAME)">>$makefile
+    if [ ! -z $lib_dir ] && [ -f "./$project_dir/$lib_dir/Makefile" ]
+    then
+        echo -e "\t\t\t$(MAKE) -C $lib_dir fclean">>$makefile
+    fi
+    echo -e "re:\t\t\tfclean all">>$makefile
+
+    # Archivage
+    if [ -n $comp ] && [ -n $comp_flags ] && [ -n $backup_dir ]
+    then
+        echo -e "archive:\n\t\t\t$comp $comp_flags ./$backup_dir/backup_\$(VERSION).$comp \$(SRC)">>$makefile
+        echo -e "\t\t\t@echo backup_\$(VERSION).$comp file generated.">>$makefile
+        echo -e "\t\t\t./.nb_version.sh +">>$makefile
+    fi
+    if [ -n $decomp ] && [ -n $decomp_flags ] && [ -n $backup_dir ]
+    then
+        echo -e "revert:\t\tVERSION = \$(shell (find ./ -name *.tar | wc -l))">>$makefile
+        echo -e "revert:\n\t\t\t$decomp $decomp_flags ./$backup_dir/backup_\$(VERSION).$comp \$(SRC)">>$makefile
+        echo -e "\t\t\t./.nb_version.sh -">>$makefile
+    fi
+        echo -e "num:\n\t\t\t@echo \$(VERSION)">>$makefile
+    if [ -n $comp ] && [ -n $comp_flags ] && [ -n $backup_dir ]
+    then
+        echo -e "delete:\t\tVERSION = \$(shell (find ./ -name *.tar | wc -l))">>$makefile
+        echo -e "delete:\n\t\t\t\$(RM) ./$backup_dir/backup_\$(VERSION).$comp">>$makefile
+        echo -e "\t\t\t./.nb_version.sh -">>$makefile
+    fi
+        echo -e ".PHONY:\t\tall clean fclean re archive revert num delete">>$makefile
+
+    # generation script version
+    echo 1 > $project_dir/.version
+    echo "#!/bin/bash
+let \"version=\`cat .version\`\"
+
+if [ -n \$1 ] && [ \$1 == "+" ]
+then
+    let \"version++\"
+    echo \$version > .version
+elif [ -n \$1 ] && [ \$1 == "-" ]
+then
+    let \"version--\"
+    echo \$version > .version
+else
+    exit 84
+fi" > $project_dir/.nb_version.sh
+    chmod +x $project_dir/.nb_version.sh
+fi
+exit 0
